@@ -33,7 +33,7 @@ def extract_ipo_data(pdf_path):
     # Extract IPO details
     data["Company Name"] = find(r'\b([A-Z][A-Z\s]+LIMITED)\b')
     data["Face Value"] = find(r'face value of ₹?([\d\.]+)')
-    data["Offer Price"] = find(r'PRICE OF ₹\[?([^\s\]]+)')
+    data["Issue Price"] = find(r'PRICE OF ₹\[?([^\s\]]+)')
     # data["Total Issue Size"] = find(r'aggregating up to ₹([\d,\.]+) million')
     # data["Fresh Share"] = find(r'Fresh Issue.*?₹([\d,\.]+) million')
     # data["Offer For Sale"] = find(r'Offer for Sale.*?₹([\d,\.]+) million')
