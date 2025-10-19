@@ -1,81 +1,51 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile, Query
 import fitz  # PyMuPDF
-import re
-import tempfile
-import os
 import json
-from datetime import datetime
+import re
+import os
 
-app = FastAPI(title="IPO PDF Extractor API")
+app = FastAPI()
 
+@app.post("/extract-page/")
+async def extract_page_text(
+    file: UploadFile = File(...),
+    page_number: int = Query(..., description="Page number to extract (1-based index)")
+):
+    # Save uploaded file temporarily
+    temp_file_path = file.filename
+    with open(temp_file_path, "wb") as f:
+        f.write(await file.read())
 
-# Define the specific fields we want
-IPO_FIELDS = {
-    "Company Name": r'\b([A-Z][A-Z\s]+LIMITED)\b',
-    "Face Value": r'face value of ₹?([\d\.]+)',
-    "Issue Type": r'issue type[:\-]?\s*([A-Za-z\s]+)',
-    "Lot Size": r'lot size of ([\d,]+) shares',
-    "Offer Price": r'(?:PRICE OF|Offer Price) ₹?([\d\.]+)',
-    "Total Issue Size": r'aggregating up to ₹([\d,\.]+) million',
-    "Fresh Share": r'Fresh Issue.*?₹([\d,\.]+) million',
-    "Offer For Sale": r'Offer for Sale.*?₹([\d,\.]+) million',
-    "Listing at": r'listed on the (.*?)\('
-}
+    # Open PDF
+    doc = fitz.open(temp_file_path)
+    page_index = page_number - 1
 
+    # Validate page number
+    if page_index < 0 or page_index >= len(doc):
+        os.remove(temp_file_path)
+        return {"error": f"Invalid page number. PDF has {len(doc)} pages."}
 
-def extract_ipo_fields(text: str) -> dict:
-    """
-    Extract predefined IPO fields from PDF text.
-    """
-    data = {}
-    text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+    # Extract text
+    page = doc.load_page(page_index)
+    text = page.get_text("text")
+    ftext = re.sub(r'\s+', ' ', text)
 
-    for field, pattern in IPO_FIELDS.items():
-        match = re.search(pattern, text, re.IGNORECASE)
-        data[field] = match.group(1).strip() if match else "N/A"
+    # Prepare JSON data
+    data = {
+        "page_number": page_number,
+        "extracted_text": ftext
+    }
 
-    return data
+    # Save JSON file
+    json_file_name = f"page_{page_number}_text.json"
+    with open(json_file_name, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
-
-def process_pdf(file_path: str) -> dict:
-    """
-    Extract all text from PDF and parse IPO fields.
-    """
-    doc = fitz.open(file_path)
-    text = ""
-    for page in doc:
-        text += page.get_text("text") + "\n"
-    doc.close()
-
-    return extract_ipo_fields(text)
-
-
-@app.post("/extract")
-async def extract_from_pdf(file: UploadFile = File(...)):
-    """
-    Upload a single PDF, extract predefined IPO fields, save JSON, and return data.
-    """
-    # Save uploaded PDF temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
-
-    # Extract IPO fields
-    extracted_data = process_pdf(tmp_path)
-
-    # Delete temporary PDF
-    os.remove(tmp_path)
-
-    # Save JSON with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"ipo_data_{timestamp}.json"
-    output_path = os.path.join(os.getcwd(), output_filename)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(extracted_data, f, indent=4, ensure_ascii=False)
+    # Clean up temporary PDF
+    os.remove(temp_file_path)
 
     return {
-        "message": "PDF processed successfully",
-        "file_name": file.filename,
-        "json_file": output_filename,
-        "data": extracted_data
+        "message": f"Extracted text from page {page_number}",
+        "json_file": json_file_name,
+        "data": data
     }

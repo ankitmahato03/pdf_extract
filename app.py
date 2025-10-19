@@ -35,11 +35,25 @@ def extract_ipo_data(pdf_path):
     data["Face Value"] = find(r'face value of ₹?([\d\.]+)')
     data["Issue Price"] = find(r'PRICE OF ₹\[?([^\s\]]+)')
     # data["Total Issue Size"] = find(r'aggregating up to ₹([\d,\.]+) million')
-    # data["Fresh Share"] = find(r'Fresh Issue.*?₹([\d,\.]+) million')
+    data["THE OFFER"] = find(r'THE OFFER Offer for sale of up to\s*([\d,]+)\s+Equity Shares bearing face value of ₹')
+
     # data["Offer For Sale"] = find(r'Offer for Sale.*?₹([\d,\.]+) million')
     # data["Listing at"] = find(r'listed on the (.*?)\(')
 
-    # Lead Managers
+    # Clean up text before searching
+    clean_text = re.sub(r'\s+', ' ', text)  # remove extra newlines and spaces
+
+    # Find all Lead Managers dynamically
+    lead_managers = re.findall(
+        r'(?:Book Running Lead Managers[:\s]*)?([A-Z][A-Za-z0-9&\s\.]*?(?:Limited|Ltd|LLP|Inc|Company|Corporation))(?![A-Za-z])',
+        clean_text,
+        flags=re.IGNORECASE
+    )
+
+    data["Lead Managers"] = ", ".join(sorted(set(lead_managers))) if lead_managers else "N/A"
+
+
+  
     # lead_managers = re.findall(
     #     r'([A-Z][A-Za-z\s&]+ Advisors Limited|Motilal Oswal Investment Advisors Limited|Intensive Fiscal Services Private Limited)',
     #     text
