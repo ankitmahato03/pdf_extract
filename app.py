@@ -15,64 +15,68 @@ def extract_ipo_data(pdf_path):
     """
     data = {}
 
-    # Open PDF and extract all text
+    # --- Step 1: Extract text from PDF ---
     doc = fitz.open(pdf_path)
     text = ""
     for page in doc:
-        text += page.get_text("text") + "\n"
+        text += f"\n\n--- Page {page.number + 1} ---\n\n"
+        text += page.get_text("text")
     doc.close()
 
-    # Normalize whitespace
+    # --- Step 2: Normalize text ---
     text = re.sub(r'\s+', ' ', text)
+    text = text.replace("₹ ", "₹")  # unify currency format
 
-    # Helper function to extract with regex
-    def find(pattern, fallback="N/A"):
-        match = re.search(pattern, text, re.IGNORECASE)
+    # --- Step 3: Helper function ---
+    def find(pattern, fallback="N/A", flags=re.IGNORECASE):
+        match = re.search(pattern, text, flags)
         return match.group(1).strip() if match else fallback
 
-    # Extract IPO details
-    data["Company Name"] = find(r'\b([A-Z][A-Z\s]+LIMITED)\b')
-    data["Face Value"] = find(r'face value of ₹?([\d\.]+)')
-    data["Issue Price"] = find(r'PRICE OF ₹\[?([^\s\]]+)')
-    # data["Total Issue Size"] = find(r'aggregating up to ₹([\d,\.]+) million')
-    data["THE OFFER"] = find(r'THE OFFER Offer for sale of up to\s*([\d,]+)\s+Equity Shares bearing face value of ₹')
+    # --- Step 4: Extract IPO details ---
+    data["Company Name"] = find(
+        r'(?:Company Name|Name of the Company)\s*[:\-]?\s*([A-Z][A-Za-z0-9\s&]+(?:Limited|Ltd\.))'
+    )
 
-    # data["Offer For Sale"] = find(r'Offer for Sale.*?₹([\d,\.]+) million')
-    # data["Listing at"] = find(r'listed on the (.*?)\(')
+    data["Face Value"] = find(
+        r'face value\s*(?:of)?\s*₹?\s*([\d\.]+)', flags=re.IGNORECASE
+    )
 
-    # Clean up text before searching
-    clean_text = re.sub(r'\s+', ' ', text)  # remove extra newlines and spaces
-
-    # Find all Lead Managers dynamically
-    lead_managers = re.findall(
-        r'(?:Book Running Lead Managers[:\s]*)?([A-Z][A-Za-z0-9&\s\.]*?(?:Limited|Ltd|LLP|Inc|Company|Corporation))(?![A-Za-z])',
-        clean_text,
+    data["Issue Price"] = find(
+        r'(?:offer price|issue price|price range)\s*(?:of)?\s*₹?\s*([\d\.]+(?:\s*-\s*₹?\d+)?)(?=\s*per share)',
         flags=re.IGNORECASE
     )
 
-    data["Lead Managers"] = ", ".join(sorted(set(lead_managers))) if lead_managers else "N/A"
+    data["Total Issue Size"] = find(
+        r'(?:total issue size|aggregating up to)\s*₹?\s*([\d,\.]+ ?(?:crore|million|lakh)?)',
+        flags=re.IGNORECASE
+    )
 
+    data["Fresh Issue"] = find(
+        r'fresh issue of up to\s*([\d,\.]+)\s*(?:equity shares|shares)',
+        flags=re.IGNORECASE
+    )
 
-  
-    # lead_managers = re.findall(
-    #     r'([A-Z][A-Za-z\s&]+ Advisors Limited|Motilal Oswal Investment Advisors Limited|Intensive Fiscal Services Private Limited)',
-    #     text
-    # )
-    # data["Lead Manager"] = ", ".join(set(lead_managers)) if lead_managers else "N/A"
-    # data["Registrar"] = find(r'Registrar to the Offer .*? ([A-Z][A-Za-z\s&]+ Limited)')
+    data["Offer For Sale"] = find(
+        r'offer for sale of up to\s*([\d,\.]+)\s*(?:equity shares|shares)',
+        flags=re.IGNORECASE
+    )
 
-    # Financial metrics
-    # data["EPS Pre IPO"] = find(r'EPS.*Pre[-\s]?IPO[:\-]?\s*([\d\.]+)')
-    # data["EPS Post IPO"] = find(r'EPS.*Post[-\s]?IPO[:\-]?\s*([\d\.]+)')
-    # data["P/E Pre IPO"] = find(r'P/?E.*Pre[-\s]?IPO[:\-]?\s*([\d\.]+)')
-    # data["P/E Post IPO"] = find(r'P/?E.*Post[-\s]?IPO[:\-]?\s*([\d\.]+)')
-    # data["ROE"] = find(r'Return on Equity.*?([\d\.]+)%')
-    # data["ROCE"] = find(r'Return on Capital Employed.*?([\d\.]+)%')
-    # data["Debt/Equity"] = find(r'Debt[ \-\/]?Equity.*?([\d\.]+)')
-    # data["RoNW"] = find(r'Return on Net Worth.*?([\d\.]+)%')
-    # data["PAT Margin"] = find(r'PAT Margin.*?([\d\.]+)%')
-    # data["Price to Book Value"] = find(r'Price to Book Value.*?([\d\.]+)')
-    # data["Market Cap."] = find(r'Market Capitalization.*?₹([\d,\.]+)')
+    data["Listing At"] = find(
+        r'(?:proposed to be listed on|listing at)\s*[:\-]?\s*([A-Z\s&]+)',
+        flags=re.IGNORECASE
+    )
+
+    # --- Step 5: Lead Managers & Registrar ---
+    lead_managers = re.findall(
+        r'(?:book running lead manager|brlm|lead manager)[\s:–-]*([A-Z][A-Za-z\s&]+(?:Limited|Ltd\.))',
+        text, re.IGNORECASE
+    )
+    data["Lead Manager"] = ", ".join(sorted(set(lead_managers))) if lead_managers else "N/A"
+
+    data["Registrar"] = find(
+        r'(?:registrar to the offer|registrar)\s*[:\-]?\s*([A-Z][A-Za-z\s&]+(?:Limited|Ltd\.))',
+        flags=re.IGNORECASE
+    )
 
     return data
 
@@ -97,7 +101,7 @@ async def extract_from_pdf(file: UploadFile = File(...)):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(ipo_data, f, indent=4, ensure_ascii=False)
 
-    # Optionally, delete temp PDF
+    # Delete temporary PDF
     os.remove(tmp_path)
 
     return {
